@@ -1,174 +1,188 @@
-﻿// script.js - Hoàn chỉnh cho Sprint 1
-document.addEventListener('DOMContentLoaded', () => {
-    const API_BASE = 'http://localhost:5000'; // Chạy cùng origin với Flask
+﻿// --- CẤU HÌNH ĐƯỜNG DẪN SERVER ---
+const API_BASE = 'http://127.0.0.1:5001';
 
-    // Các phần tử giao diện
-    const qInput = document.getElementById('q');
-    const btnSearch = document.getElementById('btn-search');
-    const resDiv = document.getElementById('res');
-    const loader = document.getElementById('loader');
+let chatHistory = [];
+let isChatOpen = true;
 
-    const optimizeForm = document.getElementById('optimizeForm');
-    const scheduleBody = document.getElementById('schedule-body');
-    const scheduleTable = document.getElementById('schedule-table');
-    const messageBox = document.getElementById('message-box');
+// 1. CHUYỂN TAB
+function switchTab(tabId) {
+    document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    
+    // Highlight nút bấm
+    const buttons = document.querySelectorAll('.tab-btn');
+    if (tabId === 'search') {
+        buttons[0].classList.add('active');
+    } else {
+        buttons[1].classList.add('active');
+        // Khi chuyển sang tab Deadline thì tự động tải danh sách luôn
+        loadSchedule();
+    }
+}
 
-    const chatBody = document.getElementById('chat-body');
-    const chatInput = document.getElementById('chat-input');
-    const chatSend = document.getElementById('chat-send');
-    const chatToggle = document.getElementById('chat-toggle');
-    const chatInputRow = document.getElementById('chat-input-row');
+// 2. TÌM KIẾM
+async function doSearch() {
+    const query = document.getElementById('q').value.trim();
+    const resultDiv = document.getElementById('search-res');
+    
+    if (!query) { alert("Vui lòng nhập từ khóa!"); return; }
+    
+    resultDiv.innerHTML = '<div style="text-align:center; margin-top:20px;">⏳ Đang tìm kiếm...</div>';
 
-    let conversationHistory = [];
+    try {
+        const response = await fetch(`${API_BASE}/api/search/material`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        });
+        const data = await response.json();
 
-    // Hàm tiện ích
-    const show = el => el.classList.remove('hidden');
-    const hide = el => el.classList.add('hidden');
+        if (data.status === 'success' && data.results.length > 0) {
+            resultDiv.innerHTML = data.results.map(item => `
+                <div class="res-item">
+                    <a href="${item.URL}" target="_blank" class="res-title">${item.TieuDe}</a>
+                    <div style="font-size:0.85rem; color:#666; margin-top:5px;">
+                        Độ tin cậy: <strong>${item.DiemTinCay}%</strong> ${item.DiemTinCay >= 80 ? '✅' : ''}
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            resultDiv.innerHTML = '<div style="text-align:center;">Không tìm thấy kết quả.</div>';
+        }
+    } catch (error) { resultDiv.innerHTML = `<div style="color:red; text-align:center;">Lỗi kết nối Server!</div>`; }
+}
 
-    // Hàm xử lý chuỗi tránh lỗi XSS và giữ định dạng xuống dòng
-    const esc = s => String(s || '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": "&#39;"
-    }[c]));
+// 3. TẠO DEADLINE & TÍNH ĐIỂM
+async function saveDeadline(event) {
+    event.preventDefault();
+    const timeVal = document.getElementById('time').value;
+    if (!timeVal) { alert("Vui lòng chọn thời gian!"); return; }
 
-    // --- TÍNH NĂNG TÌM KIẾM ---
-    async function doSearch() {
-        const q = qInput.value.trim();
-        if (!q) return;
-        resDiv.innerHTML = '';
-        show(loader);
-        try {
-            const resp = await fetch(`${API_BASE}/api/search/material`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: q })
-            });
-            const data = await resp.json();
-            if (data.status === 'success' && Array.isArray(data.results)) {
-                resDiv.innerHTML = data.results.map(item => `
-                    <div class="result-card">
-                        <div>
-                            <h4 class="result-title">${esc(item.TieuDe)}</h4>
-                            <a class="result-url" href="${esc(item.URL)}" target="_blank">${esc(item.URL)}</a>
+    const payload = {
+        SinhVienID: document.getElementById('svID').value,
+        MonHocID: document.getElementById('mhID').value,
+        TieuDe: document.getElementById('title').value,
+        MucDoQuanTrong: document.getElementById('imp').value,
+        ThoiGianKetThuc: timeVal.replace('T', ' ') + ':00'
+    };
+
+    const resultBox = document.getElementById('dl-result');
+    resultBox.style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_BASE}/api/deadline/create`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            resultBox.style.display = 'block';
+            document.getElementById('res-score').innerText = data.DiemUuTien;
+            
+            // 🔥 QUAN TRỌNG: Lưu xong thì tải lại danh sách ngay
+            loadSchedule();
+        } else {
+            alert('Lỗi Server: ' + (data.error || data.message));
+        }
+    } catch (error) { alert('Không thể kết nối Server.'); }
+}
+
+// 🔥 4. HÀM MỚI: TẢI DANH SÁCH DEADLINE (LỊCH TRÌNH)
+async function loadSchedule() {
+    const listDiv = document.getElementById('schedule-list');
+    const svID = document.getElementById('svID').value || 'SV001';
+
+    listDiv.innerHTML = '<div style="padding:20px; text-align:center;">⏳ Đang tải dữ liệu...</div>';
+
+    try {
+        const response = await fetch(`${API_BASE}/api/schedule/optimize`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ SinhVienID: svID })
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            const tasks = data.OptimizedSchedule;
+            if (tasks.length === 0) {
+                listDiv.innerHTML = '<div style="padding:20px; text-align:center; color:#718096;">Chưa có deadline nào.</div>';
+                return;
+            }
+
+            // Render danh sách (Sắp xếp theo điểm ưu tiên cao nhất)
+            listDiv.innerHTML = tasks.map((task, index) => {
+                // Đổi màu dựa trên mức độ ưu tiên
+                let color = '#4a5568';
+                if(task.DiemUuTien > 80) color = '#e53e3e'; // Đỏ (Rất gấp)
+                else if(task.DiemUuTien > 50) color = '#d69e2e'; // Vàng
+                
+                // Format ngày giờ cho đẹp (cắt bỏ phần giây thừa nếu muốn)
+                const timeShow = task.ThoiGianKetThuc.replace('T', ' ').slice(0, 16);
+
+                return `
+                <div style="padding:15px; border-bottom:1px solid #edf2f7; display:flex; justify-content:space-between; align-items:center; background:#fff;">
+                    <div>
+                        <div style="font-weight:600; font-size:1rem; color:#2d3748;">
+                            <span style="color:#718096; font-size:0.8rem; margin-right:5px;">#${index+1}</span>
+                            ${task.TieuDe} 
+                            <span style="font-size:0.8rem; background:#edf2f7; padding:2px 6px; border-radius:4px; margin-left:5px;">${task.MonHocID}</span>
                         </div>
-                        <div class="badge">${item.DiemTinCay ?? 50}%</div>
-                    </div>`).join('');
-            } else {
-                resDiv.innerHTML = `<div class="result-card">${esc(data.message || 'Không có kết quả')}</div>`;
-            }
-        } catch (e) {
-            resDiv.innerHTML = `<div class="result-card">Lỗi kết nối tới server tìm kiếm.</div>`;
-        } finally {
-            hide(loader);
+                        <div style="font-size:0.85rem; color:#718096; margin-top:4px;">
+                            📅 Hạn: ${timeShow}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:1.2rem; font-weight:bold; color:${color};">
+                            ${parseFloat(task.DiemUuTien).toFixed(1)}
+                        </div>
+                        <div style="font-size:0.7rem; color:#a0aec0;">Điểm Ưu Tiên</div>
+                    </div>
+                </div>`;
+            }).join('');
         }
+    } catch (e) {
+        listDiv.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Lỗi tải danh sách.</div>';
     }
-    btnSearch.addEventListener('click', doSearch);
-    qInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+}
 
-    // --- TÍNH NĂNG TỐI ƯU LỊCH ---
-    optimizeForm.addEventListener('submit', async e => {
-        e.preventDefault();
-        scheduleBody.innerHTML = '';
-        scheduleTable.classList.add('hidden');
-        const sinhVienID = document.getElementById('sinhVienID').value.trim() || 'SV001';
-        try {
-            const resp = await fetch(`${API_BASE}/api/schedule/optimize`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ SinhVienID: sinhVienID })
-            });
-            const data = await resp.json();
-            if (resp.ok && Array.isArray(data.OptimizedSchedule)) {
-                data.OptimizedSchedule.forEach((t, index) => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td><strong>${index + 1}</strong></td>
-                        <td>${esc(t.TieuDe)}</td>
-                        <td>${esc(t.MonHocID)}</td>
-                        <td>${(t.DiemUuTien ?? 0).toFixed(1)}</td>
-                        <td>${esc(t.ThoiGianKetThuc)}</td>`;
-                    scheduleBody.appendChild(tr);
-                });
-                scheduleTable.classList.remove('hidden');
-            }
-        } catch (err) {
-            alert('Lỗi kết nối server tối ưu lịch.');
-        }
-    });
+// 5. CHAT WIDGET
+function toggleChat() {
+    const box = document.getElementById('chatBox');
+    const icon = document.getElementById('chat-icon');
+    if (isChatOpen) { box.style.display = 'none'; icon.innerText = '▲'; } 
+    else { box.style.display = 'flex'; icon.innerText = '▼'; }
+    isChatOpen = !isChatOpen;
+}
 
-    // --- TÍNH NĂNG CHAT (AI ASSISTANT) ---
-    chatToggle.addEventListener('click', () => {
-        const isHidden = chatBody.style.display === 'none';
-        chatBody.style.display = isHidden ? 'block' : 'none';
-        chatInputRow.style.display = isHidden ? 'flex' : 'none';
-        chatToggle.textContent = isHidden ? '−' : '+';
-    });
+async function sendChat() {
+    const input = document.getElementById('chatInp');
+    const message = input.value.trim();
+    if (!message) return;
+    const box = document.getElementById('chatBox');
 
-    function appendChat(role, text) {
-        const el = document.createElement('div');
-        el.className = 'chat-message ' + (role === 'user' ? 'user' : 'bot');
-        // Chuyển đổi dấu xuống dòng \n thành thẻ <br> để hiển thị đẹp
-        el.innerHTML = esc(text).replace(/\n/g, '<br>');
-        chatBody.appendChild(el);
-        chatBody.scrollTop = chatBody.scrollHeight;
+    box.innerHTML += `<div class="msg user">${message}</div>`;
+    input.value = '';
+    chatHistory.push({ role: 'user', content: message });
+    box.scrollTop = box.scrollHeight;
+    
+    // Hiệu ứng loading
+    const load = document.createElement('div');
+    load.className = 'msg bot'; load.innerText = '...';
+    box.appendChild(load);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/chat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message, history: chatHistory })
+        });
+        const data = await response.json();
+        load.remove();
+        const reply = (data.reply || 'AI không phản hồi').replace(/\n/g, '<br>');
+        box.innerHTML += `<div class="msg bot">${reply}</div>`;
+        chatHistory.push({ role: 'model', content: data.reply });
+    } catch (error) {
+        load.remove();
+        box.innerHTML += `<div class="msg bot" style="color:red">Lỗi kết nối.</div>`;
     }
-
-    function appendTyping() {
-        const el = document.createElement('div');
-        el.className = 'chat-message bot typing';
-        el.textContent = 'Đang suy nghĩ...';
-        chatBody.appendChild(el);
-        chatBody.scrollTop = chatBody.scrollHeight;
-        return el;
-    }
-
-    async function sendChat() {
-        const text = chatInput.value.trim();
-        if (!text || chatSend.disabled) return;
-
-        // Hiển thị tin nhắn người dùng
-        appendChat('user', text);
-        chatInput.value = '';
-
-        // Cập nhật lịch sử (tối đa 20 câu gần nhất để tiết kiệm token)
-        conversationHistory.push({ role: 'user', content: text });
-        if (conversationHistory.length > 20) conversationHistory.shift();
-
-        // Trạng thái chờ
-        chatSend.disabled = true;
-        const typingEl = appendTyping();
-
-        try {
-            const resp = await fetch(`${API_BASE}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: text,
-                    history: conversationHistory
-                })
-            });
-
-            const data = await resp.json();
-            typingEl.remove();
-
-            if (resp.ok) {
-                const reply = data.reply || 'AI không có phản hồi.';
-                appendChat('assistant', reply);
-                conversationHistory.push({ role: 'assistant', content: reply });
-            } else {
-                appendChat('assistant', 'Lỗi: ' + (data.reply || 'Không thể kết nối AI.'));
-            }
-        } catch (e) {
-            typingEl.remove();
-            appendChat('assistant', 'Lỗi kết nối tới server chat.');
-        } finally {
-            chatSend.disabled = false;
-            chatInput.focus();
-        }
-    }
-
-    chatSend.addEventListener('click', sendChat);
-    chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
-
-    // Focus vào ô tìm kiếm khi tải trang
-    if (qInput) qInput.focus();
-});
+    box.scrollTop = box.scrollHeight;
+}

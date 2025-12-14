@@ -1,80 +1,120 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Learning Assistant</title>
-    <link rel="stylesheet" href="style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #667eea; --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        body { font-family: 'Poppins', sans-serif; background: var(--bg-gradient); margin: 0; padding: 20px; min-height: 100vh; display: flex; justify-content: center; color: #2d3748; }
+        
+        /* Container */
+        .app-container { background: #fff; width: 100%; max-width: 900px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column; min-height: 85vh; }
+        
+        /* Tabs */
+        .tabs { display: flex; background: #f7fafc; padding: 10px; border-bottom: 1px solid #e2e8f0; }
+        .tab-btn { flex: 1; padding: 12px; border: none; background: transparent; cursor: pointer; font-weight: 600; color: #718096; border-radius: 10px; transition: 0.3s; }
+        .tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .tab-btn:hover:not(.active) { background: #edf2f7; }
+        
+        /* Content */
+        .content { padding: 30px; display: none; animation: fadeIn 0.4s; }
+        .content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Inputs & Buttons */
+        input.inp, select { width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #e2e8f0; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
+        input.inp:focus { outline: none; border-color: var(--primary); }
+        button.btn-action { background: var(--primary); color: #fff; width: 100%; padding: 15px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: 0.3s; }
+        button.btn-action:hover { opacity: 0.9; transform: translateY(-2px); }
+
+        /* Search Results */
+        .res-item { padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; background: #fff; transition: 0.2s; }
+        .res-item:hover { border-color: var(--primary); transform: translateX(5px); }
+        .res-title { font-weight: bold; color: var(--primary); text-decoration: none; display: block; margin-bottom: 5px; }
+
+        /* Chat Widget */
+        .chat-widget { position: fixed; bottom: 20px; right: 20px; width: 340px; background: #fff; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); z-index: 100; display: flex; flex-direction: column; overflow: hidden; }
+        .chat-header { background: #4a5568; color: #fff; padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .chat-body { height: 320px; padding: 15px; overflow-y: auto; background: #f7fafc; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px 12px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; line-height: 1.4; }
+        .msg.user { align-self: flex-end; background: var(--primary); color: #fff; }
+        .msg.bot { align-self: flex-start; background: #e2e8f0; color: #2d3748; }
+        .chat-input { display: flex; border-top: 1px solid #e2e8f0; }
+        .chat-input input { flex: 1; border: none; padding: 12px; outline: none; }
+        .chat-input button { border: none; background: none; color: var(--primary); font-weight: bold; cursor: pointer; padding: 0 15px; }
+    </style>
 </head>
 <body>
-    <header class="topbar">
-        <div class="brand">
-            <h1>🧠 AI Learning Assistant</h1>
-            <p class="subtitle">Tìm tài liệu • Đánh giá độ tin cậy • Tối ưu lịch • Chat với AI</p>
-        </div>
-    </header>
 
-    <main class="container">
-        <section class="left">
-            <div class="card search-card">
-                <h3>Tìm tài liệu</h3>
-                <div class="search-row">
-                    <input id="q" placeholder="Nhập từ khóa..." />
-                    <button id="btn-search">Tìm</button>
-                </div>
-                <div id="loader" class="loader hidden">Đang tìm ...</div>
-                <div id="res" class="results"></div>
-            </div>
-
-            <div class="card optimize-card">
-                <h3>Tối ưu lịch (demo)</h3>
-                <form id="optimizeForm">
-                    <input id="sinhVienID" placeholder="Nhập Sinh Viên ID (ví dụ: SV001)" value="SV001" />
-                    <button type="submit">Tối ưu & Hiển thị</button>
-                </form>
-                <div id="message-box" class="message hidden"></div>
-                <table id="schedule-table" class="schedule-table hidden">
-                    <thead>
-                        <tr>
-                            <th># Ưu Tiên</th>
-                            <th>Tiêu Đề</th>
-                            <th>Môn Học ID</th>
-                            <th>Điểm P</th>
-                            <th>Deadline</th>
-                        </tr>
-                    </thead>
-                    <tbody id="schedule-body"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <aside class="right">
-            <div class="card about">
-                <h4>Hướng dẫn</h4>
-                <ul>
-                    <li>Nhập từ khóa → Tìm tài liệu và được đánh giá độ tin cậy.</li>
-                    <li>Nhập Sinh Viên ID → Nhận danh sách nhiệm vụ đã được tối ưu (demo).</li>
-                    <li>Chat: mở "Hộp thoại AI" để hỏi (yêu cầu server có OPENAI_API_KEY đã hardcoded trong app.py).</li>
-                </ul>
-            </div>
-        </aside>
-    </main>
-
-    <!-- Chatbox -->
-    <div id="chatbox" class="chatbox">
-        <div class="chat-header">
-            <span>Hỗ trợ AI</span>
-            <button id="chat-toggle">−</button>
-        </div>
-        <div id="chat-body" class="chat-body">
-            <div class="chat-message bot">Chào bạn! Tôi có thể giúp tìm tài liệu, tối ưu lịch, hoặc trả lời câu hỏi học tập.</div>
-        </div>
-        <div id="chat-input-row" class="chat-input">
-            <input id="chat-input" placeholder="Gõ tin nhắn... (Enter để gửi)" />
-            <button id="chat-send">Gửi</button>
-        </div>
+<div class="app-container">
+    <div style="text-align:center; padding: 20px;">
+        <h2 style="margin:0; color:#4a5568;">🎓 Trợ Lý Học Tập AI</h2>
     </div>
 
-    <script src="script.js"></script>
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('search')">🔍 Tìm Tài Liệu</button>
+        <button class="tab-btn" onclick="switchTab('deadline')">🚀 Tính Deadline (Mới)</button>
+    </div>
+
+    <div id="tab-search" class="content active">
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <input type="text" id="q" class="inp" style="margin-bottom:0" placeholder="Nhập chủ đề (VD: Python cơ bản)...">
+            <button class="btn-action" style="width:auto; padding:0 30px;" onclick="doSearch()">Tìm</button>
+        </div>
+        <div id="search-res" style="color:#718096; text-align:center;">Kết quả tìm kiếm sẽ hiện ở đây...</div>
+    </div>
+
+    <div id="tab-deadline" class="content">
+        <form onsubmit="saveDeadline(event)">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                <input type="text" id="svID" class="inp" placeholder="Mã Sinh Viên" value="SV001">
+                <input type="text" id="mhID" class="inp" placeholder="Mã Môn Học" value="M101">
+            </div>
+            <input type="text" id="title" class="inp" placeholder="Tiêu đề bài tập (VD: Báo cáo cuối kỳ)">
+            
+            <label style="font-weight:600; display:block; margin-bottom:8px;">Mức độ quan trọng (1-5): <span id="imp-val" style="color:var(--primary)">3</span></label>
+            <input type="range" id="imp" min="1" max="5" value="3" style="width:100%; cursor:pointer;" oninput="document.getElementById('imp-val').innerText=this.value">
+            
+            <label style="font-weight:600; display:block; margin:15px 0 8px;">Hạn nộp:</label>
+            <input type="datetime-local" id="time" class="inp" required>
+            
+            <button type="submit" class="btn-action">Tính Điểm & Lưu</button>
+        </form>
+
+        <div id="dl-result" style="display:none; margin-top:20px; padding:15px; background:#f0fff4; border:1px solid #c6f6d5; border-radius:10px; color:#276749;">
+            <h3 style="margin:0 0 10px 0;">✅ Lưu Thành Công!</h3>
+            <p>Điểm Ưu Tiên: <strong id="res-score"></strong></p>
+        </div>
+
+        <div style="margin-top: 30px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 style="margin:0; color:#4a5568;">📅 Danh Sách Đã Lưu</h3>
+                <button onclick="loadSchedule()" style="padding:8px 15px; border:1px solid #cbd5e0; background:#fff; border-radius:8px; cursor:pointer;">🔄 Làm mới</button>
+            </div>
+            
+            <div id="schedule-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+                <div style="padding:20px; text-align:center; color:#718096;">Chưa có dữ liệu.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="chat-widget">
+    <div class="chat-header" onclick="toggleChat()">
+        <span>🤖 Chat AI</span>
+        <span id="chat-icon">▼</span>
+    </div>
+    <div class="chat-body" id="chatBox">
+        <div class="msg bot">Chào bạn! Tôi có thể giúp gì?</div>
+    </div>
+    <div class="chat-input">
+        <input type="text" id="chatInp" placeholder="Nhập tin nhắn..." onkeypress="if(event.key==='Enter') sendChat()">
+        <button onclick="sendChat()">GỬI</button>
+    </div>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
