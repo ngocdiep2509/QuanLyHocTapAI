@@ -65,13 +65,70 @@ def index():
     return send_from_directory(base_dir, 'index.html')
 
 # API 1: CHAT AI
+# ==========================================
+# HÀM PHỤ: LẤY DỮ LIỆU TỪ DB ĐỂ DẠY AI
+# ==========================================
+def get_schedule_context(sv_id):
+    """Lấy danh sách deadline từ DB và chuyển thành văn bản để AI đọc hiểu"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        query = """
+            SELECT TieuDe, MonHocID, ThoiGianKetThuc, MucDoQuanTrong, DiemUuTien 
+            FROM LichTrinh 
+            WHERE SinhVienID = ? 
+            ORDER BY DiemUuTien DESC
+        """
+        cursor.execute(query, sv_id)
+        rows = cursor.fetchall()
+        
+        if not rows:
+            return "Hiện tại sinh viên chưa có lịch trình nào trong danh sách."
+            
+        # Biến dữ liệu SQL thành đoạn văn bản mô tả
+        context_text = "Danh sách lịch trình/deadline hiện tại của sinh viên:\n"
+        for row in rows:
+            # Format ngày giờ cho dễ đọc
+            time_str = row[2].strftime("%d/%m/%Y %H:%M") if row[2] else "Không rõ"
+            context_text += f"- Môn {row[1]}: {row[0]} (Hạn: {time_str}, Quan trọng: {row[3]}/5, Điểm ưu tiên: {row[4]:.1f})\n"
+            
+        return context_text
+    except Exception as e:
+        return f"Lỗi khi đọc dữ liệu: {str(e)}"
+    finally:
+        if conn: conn.close()
+
+# ==========================================
+# API CHAT (ĐÃ NÂNG CẤP ĐỂ ĐỌC DATABASE)
+# ==========================================
 @app.route('/api/chat', methods=['POST'])
 def chat():
     if not model_gemini: 
         return jsonify({"reply": f"Lỗi AI: Không tìm thấy model ({active_model_name})"}), 500
     
     data = request.json or {}
+    user_msg = data.get('message', '')
+    sv_id = 'SV001' # Mặc định lấy của SV001
+    
     try:
+        # 1. Lấy dữ liệu deadline mới nhất từ DB
+        db_context = get_schedule_context(sv_id)
+        
+        # 2. Tạo "Prompt hệ thống" để AI biết nó là ai và đang nắm dữ liệu gì
+        system_instruction = (
+            f"Bạn là một trợ lý học tập thông minh.\n"
+            f"Dưới đây là dữ liệu thực tế từ cơ sở dữ liệu của sinh viên:\n"
+            f"---------------------\n"
+            f"{db_context}\n"
+            f"---------------------\n"
+            f"Hãy trả lời câu hỏi của sinh viên dựa trên dữ liệu trên. "
+            f"Nếu sinh viên hỏi về việc phải làm, hãy nhắc nhở dựa trên 'Điểm ưu tiên' và 'Hạn nộp'. "
+            f"Nếu không liên quan đến lịch trình, hãy trả lời kiến thức bình thường.\n"
+            f"Câu hỏi của sinh viên: {user_msg}"
+        )
+
+        # 3. Xử lý lịch sử chat (History)
         history = []
         for m in data.get('history', []):
             role = "user" if m.get('role') == "user" else "model"
@@ -79,8 +136,12 @@ def chat():
             if content:
                 history.append({"role": role, "parts": [content]})
         
+        # 4. Gửi tin nhắn đã ghép context cho AI
         chat_session = model_gemini.start_chat(history=history)
-        response = chat_session.send_message(data.get('message', ''))
+        
+        # Lưu ý: Chúng ta gửi system_instruction thay vì chỉ gửi user_msg đơn thuần
+        response = chat_session.send_message(system_instruction)
+        
         return jsonify({"reply": response.text})
     except Exception as e:
         return jsonify({"reply": f"Lỗi AI: {str(e)}"}), 500
@@ -192,6 +253,30 @@ def get_optimized_schedule():
 
     except Exception as e:
         print(f"Lỗi Optimize: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+# ==========================================
+# API 5: XÓA DEADLINE (MỚI THÊM)
+# ==========================================
+@app.route('/api/deadline/delete', methods=['POST'])
+def delete_deadline():
+    data = request.json
+    id_can_xoa = data.get('LichTrinhID')
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Thực hiện xóa trong DB
+        cursor.execute("DELETE FROM LichTrinh WHERE LichTrinhID = ?", id_can_xoa)
+        conn.commit()
+        
+        return jsonify({"status": "success", "message": "Đã xóa thành công!"})
+    except Exception as e:
+        if conn: conn.rollback()
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()

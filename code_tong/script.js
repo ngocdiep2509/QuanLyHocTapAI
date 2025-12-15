@@ -1,6 +1,5 @@
-﻿// --- CẤU HÌNH ĐƯỜNG DẪN SERVER ---
+﻿// --- CẤU HÌNH ---
 const API_BASE = 'http://127.0.0.1:5001';
-
 let chatHistory = [];
 let isChatOpen = true;
 
@@ -10,53 +9,42 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.getElementById('tab-' + tabId).classList.add('active');
     
-    // Highlight nút bấm
     const buttons = document.querySelectorAll('.tab-btn');
-    if (tabId === 'search') {
-        buttons[0].classList.add('active');
-    } else {
+    if (tabId === 'search') buttons[0].classList.add('active');
+    else {
         buttons[1].classList.add('active');
-        // Khi chuyển sang tab Deadline thì tự động tải danh sách luôn
-        loadSchedule();
+        loadSchedule(); // Tự động tải danh sách khi mở tab
     }
 }
 
 // 2. TÌM KIẾM
 async function doSearch() {
     const query = document.getElementById('q').value.trim();
-    const resultDiv = document.getElementById('search-res');
-    
+    const resDiv = document.getElementById('search-res');
     if (!query) { alert("Vui lòng nhập từ khóa!"); return; }
     
-    resultDiv.innerHTML = '<div style="text-align:center; margin-top:20px;">⏳ Đang tìm kiếm...</div>';
-
+    resDiv.innerHTML = '<div style="text-align:center; margin-top:20px;">⏳ Đang tìm kiếm...</div>';
     try {
-        const response = await fetch(`${API_BASE}/api/search/material`, {
+        const resp = await fetch(`${API_BASE}/api/search/material`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: query })
         });
-        const data = await response.json();
-
+        const data = await resp.json();
         if (data.status === 'success' && data.results.length > 0) {
-            resultDiv.innerHTML = data.results.map(item => `
+            resDiv.innerHTML = data.results.map(i => `
                 <div class="res-item">
-                    <a href="${item.URL}" target="_blank" class="res-title">${item.TieuDe}</a>
-                    <div style="font-size:0.85rem; color:#666; margin-top:5px;">
-                        Độ tin cậy: <strong>${item.DiemTinCay}%</strong> ${item.DiemTinCay >= 80 ? '✅' : ''}
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            resultDiv.innerHTML = '<div style="text-align:center;">Không tìm thấy kết quả.</div>';
-        }
-    } catch (error) { resultDiv.innerHTML = `<div style="color:red; text-align:center;">Lỗi kết nối Server!</div>`; }
+                    <a href="${i.URL}" target="_blank" class="res-title">${i.TieuDe}</a>
+                    <div style="font-size:0.85rem; color:#666;">Độ tin cậy: <strong>${i.DiemTinCay}%</strong></div>
+                </div>`).join('');
+        } else resDiv.innerHTML = '<div style="text-align:center;">Không tìm thấy kết quả.</div>';
+    } catch (e) { resDiv.innerHTML = `<div style="color:red; text-align:center;">Lỗi kết nối Server!</div>`; }
 }
 
-// 3. TẠO DEADLINE & TÍNH ĐIỂM
-async function saveDeadline(event) {
-    event.preventDefault();
+// 3. TẠO DEADLINE
+async function saveDeadline(e) {
+    e.preventDefault();
     const timeVal = document.getElementById('time').value;
-    if (!timeVal) { alert("Vui lòng chọn thời gian!"); return; }
+    if (!timeVal) { alert("Chọn thời gian!"); return; }
 
     const payload = {
         SinhVienID: document.getElementById('svID').value,
@@ -66,41 +54,33 @@ async function saveDeadline(event) {
         ThoiGianKetThuc: timeVal.replace('T', ' ') + ':00'
     };
 
-    const resultBox = document.getElementById('dl-result');
-    resultBox.style.display = 'none';
-
     try {
-        const response = await fetch(`${API_BASE}/api/deadline/create`, {
+        const resp = await fetch(`${API_BASE}/api/deadline/create`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        const data = await response.json();
-
+        const data = await resp.json();
         if (data.status === 'success') {
-            resultBox.style.display = 'block';
+            document.getElementById('dl-result').style.display = 'block';
             document.getElementById('res-score').innerText = data.DiemUuTien;
-            
-            // 🔥 QUAN TRỌNG: Lưu xong thì tải lại danh sách ngay
-            loadSchedule();
-        } else {
-            alert('Lỗi Server: ' + (data.error || data.message));
-        }
-    } catch (error) { alert('Không thể kết nối Server.'); }
+            loadSchedule(); // Tải lại danh sách ngay
+        } else alert('Lỗi: ' + data.error);
+    } catch (e) { alert('Lỗi kết nối Server.'); }
 }
 
-// 🔥 4. HÀM MỚI: TẢI DANH SÁCH DEADLINE (LỊCH TRÌNH)
+// 4. HIỂN THỊ DANH SÁCH (CÓ NÚT XÓA)
 async function loadSchedule() {
     const listDiv = document.getElementById('schedule-list');
     const svID = document.getElementById('svID').value || 'SV001';
-
-    listDiv.innerHTML = '<div style="padding:20px; text-align:center;">⏳ Đang tải dữ liệu...</div>';
+    
+    listDiv.innerHTML = '<div style="padding:20px; text-align:center;">⏳ Đang tải...</div>';
 
     try {
-        const response = await fetch(`${API_BASE}/api/schedule/optimize`, {
+        const resp = await fetch(`${API_BASE}/api/schedule/optimize`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ SinhVienID: svID })
         });
-        const data = await response.json();
+        const data = await resp.json();
 
         if (data.status === 'success') {
             const tasks = data.OptimizedSchedule;
@@ -109,43 +89,60 @@ async function loadSchedule() {
                 return;
             }
 
-            // Render danh sách (Sắp xếp theo điểm ưu tiên cao nhất)
             listDiv.innerHTML = tasks.map((task, index) => {
-                // Đổi màu dựa trên mức độ ưu tiên
-                let color = '#4a5568';
-                if(task.DiemUuTien > 80) color = '#e53e3e'; // Đỏ (Rất gấp)
-                else if(task.DiemUuTien > 50) color = '#d69e2e'; // Vàng
-                
-                // Format ngày giờ cho đẹp (cắt bỏ phần giây thừa nếu muốn)
+                let color = task.DiemUuTien > 80 ? '#e53e3e' : (task.DiemUuTien > 50 ? '#d69e2e' : '#4a5568');
                 const timeShow = task.ThoiGianKetThuc.replace('T', ' ').slice(0, 16);
 
                 return `
                 <div style="padding:15px; border-bottom:1px solid #edf2f7; display:flex; justify-content:space-between; align-items:center; background:#fff;">
-                    <div>
-                        <div style="font-weight:600; font-size:1rem; color:#2d3748;">
+                    <div style="flex: 1;">
+                        <div style="font-weight:600; color:#2d3748;">
                             <span style="color:#718096; font-size:0.8rem; margin-right:5px;">#${index+1}</span>
                             ${task.TieuDe} 
-                            <span style="font-size:0.8rem; background:#edf2f7; padding:2px 6px; border-radius:4px; margin-left:5px;">${task.MonHocID}</span>
+                            <span style="font-size:0.8rem; background:#edf2f7; padding:2px 6px; border-radius:4px;">${task.MonHocID}</span>
                         </div>
-                        <div style="font-size:0.85rem; color:#718096; margin-top:4px;">
-                            📅 Hạn: ${timeShow}
-                        </div>
+                        <div style="font-size:0.85rem; color:#718096;">📅 Hạn: ${timeShow}</div>
                     </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:1.2rem; font-weight:bold; color:${color};">
-                            ${parseFloat(task.DiemUuTien).toFixed(1)}
+                    
+                    <div style="text-align:right; display:flex; align-items:center; gap: 15px;">
+                        <div>
+                            <div style="font-size:1.1rem; font-weight:bold; color:${color};">${parseFloat(task.DiemUuTien).toFixed(1)}</div>
+                            <div style="font-size:0.7rem; color:#a0aec0;">Điểm</div>
                         </div>
-                        <div style="font-size:0.7rem; color:#a0aec0;">Điểm Ưu Tiên</div>
+                        <button onclick="deleteDeadline('${task.LichTrinhID}')" style="background:#fee2e2; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#c53030; font-size:1rem;">
+                            🗑️
+                        </button>
                     </div>
                 </div>`;
             }).join('');
         }
+    } catch (e) { listDiv.innerHTML = '<div style="text-align:center; color:red;">Lỗi tải dữ liệu.</div>'; }
+}
+
+// 5. HÀM XỬ LÝ XÓA
+async function deleteDeadline(id) {
+    if (!confirm("Bạn có chắc chắn muốn xóa deadline này không?")) return;
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/deadline/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ LichTrinhID: id })
+        });
+        const data = await resp.json();
+        
+        if (data.status === 'success') {
+            // Xóa thành công thì load lại danh sách
+            loadSchedule();
+        } else {
+            alert("Lỗi xóa: " + (data.error || "Unknown"));
+        }
     } catch (e) {
-        listDiv.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Lỗi tải danh sách.</div>';
+        alert("Lỗi kết nối Server khi xóa.");
     }
 }
 
-// 5. CHAT WIDGET
+// 6. CHAT
 function toggleChat() {
     const box = document.getElementById('chatBox');
     const icon = document.getElementById('chat-icon');
@@ -156,33 +153,23 @@ function toggleChat() {
 
 async function sendChat() {
     const input = document.getElementById('chatInp');
-    const message = input.value.trim();
-    if (!message) return;
+    const msg = input.value.trim();
+    if (!msg) return;
     const box = document.getElementById('chatBox');
-
-    box.innerHTML += `<div class="msg user">${message}</div>`;
+    
+    box.innerHTML += `<div class="msg user">${msg}</div>`;
     input.value = '';
-    chatHistory.push({ role: 'user', content: message });
+    chatHistory.push({role:'user', content:msg});
     box.scrollTop = box.scrollHeight;
     
-    // Hiệu ứng loading
-    const load = document.createElement('div');
-    load.className = 'msg bot'; load.innerText = '...';
-    box.appendChild(load);
-
+    const load = document.createElement('div'); load.className='msg bot'; load.innerText='...'; box.appendChild(load);
     try {
-        const response = await fetch(`${API_BASE}/api/chat`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: message, history: chatHistory })
-        });
-        const data = await response.json();
+        const res = await fetch(`${API_BASE}/api/chat`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:msg, history:chatHistory}) });
+        const data = await res.json();
         load.remove();
-        const reply = (data.reply || 'AI không phản hồi').replace(/\n/g, '<br>');
+        const reply = (data.reply||'Lỗi AI').replace(/\n/g, '<br>');
         box.innerHTML += `<div class="msg bot">${reply}</div>`;
-        chatHistory.push({ role: 'model', content: data.reply });
-    } catch (error) {
-        load.remove();
-        box.innerHTML += `<div class="msg bot" style="color:red">Lỗi kết nối.</div>`;
-    }
+        chatHistory.push({role:'model', content:data.reply});
+    } catch(e) { load.remove(); box.innerHTML+=`<div class="msg bot" style="color:red">Lỗi mạng.</div>`; }
     box.scrollTop = box.scrollHeight;
 }
